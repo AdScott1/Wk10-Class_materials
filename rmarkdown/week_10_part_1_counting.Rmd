@@ -1,0 +1,312 @@
+---
+title: "Week 10 - Part I - Counting things when exploring your data"
+author: "Jose Luis Rodriguez Gil"
+date: "16/11/2020"
+output: 
+  html_document:
+    number_sections: true
+    keep_md: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r libraries, include=FALSE}
+
+library(tidyverse)
+library(janitor)
+library(here)
+library(viridis)
+
+library(gt)
+
+```
+
+```{r my theme, include=FALSE}
+
+source(here("functions", "theme_pepe.R"))
+
+```
+
+One important part of data exploration is **counting things**, whether this is as a summary variable, or as a check to better understand your data or ensure that the data is the way that you thought it was.
+
+For this class we are going to use a slightly modified version of a [dataset](https://data.princeedwardisland.ca/Environment-and-Food/OD0001-Pesticide-Analysis-for-Stream-Water/jj4n-qqq2) of pesticide sample analyses results for stream water samples for the province of PEI's Pesticide Monitoring Program. The sampling includes a total of 9 rivers across PEI, with at least 3 of the rivers being sampled each year.
+
+
+```{r data loading and clean-up}
+
+pest_original <- read_csv(here("data", "pesticides.csv"))
+
+pest_data <- pest_original %>% 
+  clean_names()
+
+print(pest_data)
+
+```
+
+# Let's answer some questions about the data
+
+## What rivers where sampled
+
+If i wanted to get a list of all the rivers that were sampled each year, I can use `distinct()` which will just give me a list of unique character strings per year
+
+```{r}
+
+pest_data %>% 
+  distinct(river)
+
+```
+But, how many sites is this? I can just apply `count()` to this list and it will return the number of elements.
+
+```{r}
+
+pest_data %>% 
+  distinct(river) %>% 
+  tally()
+
+```
+
+## How many rivers were sampled per year
+
+We can list several variables inside `distinct()`. This allows us to request the distinct combinations of those variables, in this case, unique combinations of year and river
+
+```{r}
+
+ pest_data %>%
+  distinct(year, river) 
+
+```
+
+
+```{r}
+
+ pest_data %>%
+  distinct(year, river) %>% 
+  tally()
+
+```
+
+That didnt quite do what we wanted... It told us that there are 42 unique convinations of site and river, but not how many are for each speciffic year.
+
+We need an extra step
+
+```{r}
+
+ pest_data %>%
+  distinct(year, river) %>% 
+  group_by(year) %>% 
+  tally()
+
+```
+
+Now we are talking! But, there is even an easier option. The function `count()` is a combination of `group_by()` and `tally()` all in one step!
+
+```{r}
+
+ pest_data %>%
+  distinct(year, river) %>% 
+  count(year) # here year means "by year"
+
+```
+
+**NOTE**: It is a bit counter-intuitive, but what goes inside of the `count()` is not the thing you want to count (i dont want to count years, i want to count rivers!) but what groupings you want to do for your counting
+
+## What compounds were analysed?
+
+We can do exactly the same for the compounds
+
+```{r}
+
+pest_data %>% 
+  distinct(compound)
+
+```
+How many compounds is that?
+
+```{r}
+
+pest_data %>% 
+  distinct(compound) %>% 
+  tally()
+
+```
+
+## How many compound of each pesticide group were analysed?
+
+The different pesticides measured belong to different pesticide groups. In order to count how many pesticides of each group were measured, first we make a list of distinct pesticide/group combinations in the dataset with `distinct()` and then we count how many on each group using `count()`  
+
+```{r}
+
+pest_data %>% 
+  distinct(compound, group)
+
+```
+
+```{r}
+
+pest_groups <- pest_data %>% 
+  distinct(compound, group) %>% 
+  count(group)
+
+print(pest_groups)
+
+```
+
+```{r}
+
+pest_groups %>% 
+  ggplot() +
+  geom_col(aes(x = n, y = group)) +
+  scale_fill_viridis(discrete = TRUE) +
+  scale_x_continuous(limits = c(0, 65), expand = expansion(mult = 0, add = 0)) +
+  theme_pepe() +
+  labs(y = NULL,
+       x = "Number of compounds")
+
+```
+What if i wanted to know this distribution **per year**?
+
+This one is a bit trickier, but it is just a matter of doing things step by step (thank you pipes!). 
+
+We want to know things also **by year** so now we can just add `year` to our 
+
+```{r}
+
+pest_group_year <- pest_data %>% 
+  distinct(year, compound, group) %>%  # distinct combinations of year, compound and group
+  count(year, group) # Jut like in group_by() we can ask it to count the combinations of more than one variable
+
+print(pest_group_year)
+
+```
+This allows us to create some nice summary figures
+
+```{r}
+
+pest_group_year %>% 
+  mutate(year = factor(year)) %>% 
+  ggplot() +
+  geom_col(aes(x = n, y = group, fill = year), position = "dodge") +
+  scale_fill_viridis(discrete = TRUE) +
+  scale_x_continuous(limits = c(0, 65), expand = expansion(mult = 0, add = 0)) +
+  theme_pepe() +
+  labs(y = NULL,
+       x = "Number of compounds")
+
+```
+
+# How many samples were collected
+
+One common thing to report is the number of samples that were collected (or considered in an analysis). Calculating the number of samples in this dataset (and many other like it, remember this was taken from a government database) is a bit tricky, because the data is already in **long form**, as such, the *"one sample per row" does not apply anymore. Now each row is a specific measure of one compound, but a whole pannel of compounds were measured for each sample (i.e. each bottle taken of the river).
+
+However we can still count the number of samples if we get a bit creative.
+
+In this case, a particular sample is each individual combination of river and date. I went to a speciffic river, on a speciffic date and grabbed a bottle of water, that is a sammple. So if i count the number of unique combinations of date AND river, then i can count the samples
+
+
+```{r}
+
+pest_data %>% 
+  distinct(date_sampled, river) %>% 
+  tally()
+
+```
+
+Could we calculate the number of samples collected each year?
+
+
+```{r}
+
+pest_data %>% 
+  distinct(year, date_sampled, river) %>% 
+  count(year) # count "by_year"
+
+```
+
+
+# Creating nice summary tables
+
+Let's what compounds were measured each year:
+
+```{r}
+
+pest_data %>% 
+  distinct(year, compound)
+
+```
+
+This is a great format for us to keep on working with the data, but what if i wanted to make it more visually appealing for a paper?
+
+Here is one approach.
+
+Let's start by adding a dummy column of ones, by asking `count()` to count for all the groups:
+
+```{r}
+
+pest_data %>% 
+  distinct(year, compound) %>% 
+  count(year, compound)
+
+```
+
+Now we can use `pivot_wider()`, telling it to fill the empty combinations (i.e. those that don exist in this dataset) with zeros and we have a nice presence/absence table that we can use for a publication (maybe in the SI)
+
+```{r}
+
+compoun_year_table <- pest_data %>% 
+  distinct(year, compound) %>% 
+  count(year, compound) %>% 
+  pivot_wider(names_from = year, values_from = n, values_fill = 0)
+
+print(compoun_year_table)
+
+```
+
+# Quick note on some nice tools to make nice-looking tables
+
+By now we have seen how we can save our data frames (or tibbles) into a csv that we can then add to our publications. When we have a chunk of code that generates one of these, RStudio shows us a nice interactive table, but when we knit to `.md` or `html` R only gives us the same output we would get in the console, not very nice, and not even all the data.
+
+There are a number of packages available that help you formating a data frame or tibble into a nice display table. One of them is `{gt}`. 
+
+`{gt}` works a bit like `{ggplot}` but instead of layers of visual data, you can add speciffic instructions for formating a table. You can read more on their [page](https://gt.rstudio.com/index.html).
+
+```{r}
+
+compoun_year_table %>% 
+  gt() %>%      # note that on gt() you add "layers" with a pipe, not a "+" like in ggplot!
+   tab_header(
+    title = md("**Sampled compounds**"),
+    subtitle = str_c("Distribution of sampled compounds between", min(pest_data$year), "&", max(pest_data$year), sep = " ")
+  )
+
+```
+
+What if we want to separate the different pesticide clases in the table.
+
+Sometimes we want to keep information about an additional column to go through the summary process, even if we could acchieve the summary without it. Sometimes we can. In this case, we are going to include `group` in all the `distinct()` and `count()` steps and see what hapens.
+
+```{r}
+
+compound_year_with_groups <- pest_data %>% 
+  distinct(year, compound, group) %>% 
+  count(year, compound, group) %>% 
+  pivot_wider(names_from = year, values_from = n, values_fill = 0)
+
+print(compound_year_with_groups)
+
+```
+
+Same numbe rof rows, so nothing changed. However, now we have this aditional layer of info we can use in a summary table!
+
+```{r}
+
+compound_year_with_groups %>% 
+  gt(groupname_col = "group") %>%  # we tell it which of our columns we want to use as groups
+   tab_header(
+    title = md("**Sampled compounds**"),
+    subtitle = str_c("Distribution of sampled compounds between", min(pest_data$year), "&", max(pest_data$year), sep = " ")
+  )
+
+```
+
